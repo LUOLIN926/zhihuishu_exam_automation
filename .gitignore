@@ -8,6 +8,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+
+# Runtime memory database
+memory/*.sqlite3
+memory/*.sqlite3-*
 
 # Screenshots and temp files
 .ocr_screenshots/
@@ -26,4 +31,3 @@ Thumbs.db
 
 # Study/exam reference materials
 reference_materials/
-

@@ -6,12 +6,14 @@
 
 基于 Playwright、通义千问大模型网页抓取与语音转写 API 的智慧树平台学习与答题自动化工具。包含两个独立的脚本：一个负责批量下载课程视频并自动转写为本地 Markdown 知识库，另一个负责在考试时基于该本地知识库进行 RAG（检索增强生成）与模型自带联网网页抓取进行高准确度答题。
 
+> 新增独立 V2 记忆层设计与实现见：[Agent V2 Memory 架构](readme/memory_architecture.md)。
+
 ---
 
 ## 功能特性
 
 - **两个脚本独立运行**：视频下载转写工具 (`zhihuishu_video_downloader.py`) 与考试自动答题工具 (`zhihuishu_exam_automation.py`) 相互独立，各司其职。
-- **全自动考试模式（Automode）**：开启后，答题脚本在登录成功后将自动寻找 `COURSE_NAME` 对应的“作业考试”页面，并自动遍历点击进入每一门未完成的考试进行答题与保存，实现全流程闭环答题。
+- **全自动考试模式（Automode）**：开启后，答题脚本在登录成功后将自动寻找 `COURSE_NAME` 对应的“作业考试”页面，并自动遍历点击进入每一门未完成的考试进行答题、保存与提交，实现全流程闭环答题。
 - **两路互补知识搜索机制**：
   1. **本地 RAG 检索**：自动递归匹配本地课程知识库与课件资料。
   2. **模型自带网页抓取（Web Extractor）**：大模型端启用 `agent_max` 联网搜索与网页抓取功能，结合思考模式直接实时检索互联网内容，解决复杂或时效性问题。
@@ -20,7 +22,7 @@
 - **多题型支持**：支持单选题、多选题、判断题，以及填空题与简答题（自动识别空格数量，AI 结构化返回并自动填入网页）。
 - **免复制 OCR 识别**：使用通义千问视觉大模型对题干进行截图 OCR 识别，完美应对平台防复制、乱码及混淆字体。
 - **智能人机接管**：登录或答题时若遇到滑块验证码，程序会自动暂停并提示用户手动完成，完成后程序自动继续。
-- **自动保存不提交**：答题结束后自动保存答案，但**绝对不会自动提交**，留给用户人工检查核对。
+- **提交行为可区分**：普通模式下，答题结束后只自动保存答案，并提示用户人工检查后自行决定是否提交；`AUTOMODE=true` 时，程序会在最后一题保存后尝试自动提交。
 
 ---
 
@@ -31,7 +33,7 @@
 ### 1. 克隆项目与安装依赖
 ```bash
 # 1. 克隆项目
-git clone https://github.com/LUOLIN926/zhihuishu_exam_automation.git
+git clone https://github.com/linfish330/zhihuishu_exam_automation.git
 cd zhihuishu_exam_automation
 
 # 2. 安装依赖与浏览器内核
@@ -94,10 +96,14 @@ python zhihuishu_exam_automation.py
 | | `REFERENCE_MODE` | 否 | 参考资料检索模式：`rag`（基于题干智能检索，推荐）、`full`（全部导入）、`none`（不导入） |
 | | `REFERENCE_TOP_K` | 否 | RAG 检索返回的相关文档数量上限，默认 `3` |
 | | `RAG_HIGH_MATCH_THRESHOLD` | 否 | RAG 检索最大相关性得分阈值。低于该值（或未命中文档）时会强烈建议并引导大模型使用联网工具（`web_search` 和 `web_extractor`）进行比对验证，默认 `5.0` |
+| **V2 Memory** | `MEMORY_ENABLED` | 否 | 是否启用 V2 记忆层，默认 `true`。当前为独立新版本能力，不影响现有脚本 |
+| | `MEMORY_DB_PATH` | 否 | V2 SQLite 记忆库路径，默认 `./memory/zhihuishu_memory.sqlite3` |
+| | `MEMORY_REUSE_THRESHOLD` | 否 | 直接复用历史答案的相似度阈值，默认 `0.92` |
+| | `MEMORY_REFERENCE_THRESHOLD` | 否 | 将历史题作为参考注入 prompt 的相似度阈值，默认 `0.70` |
 | **答题控制** | `SKIP_COMPLETED_QUESTIONS`| 否 | 是否跳过已经做完的题目，默认 `true` |
 | | `ENABLE_REASONING` | 否 | 是否启用大模型推理模式，默认 `false` |
 | | `EXAM_URL` | 否 | 指定直接跳转的考试 URL（为空则运行时手动输入或直接回车解析当前页面） |
-| | `AUTOMODE` | 否 | 是否开启全自动考试模式，默认 `false`。开启后将自动在课程列表中定位指定课程并按序完成所有未做完的考试 |
+| | `AUTOMODE` | 否 | 是否开启全自动考试模式，默认 `false`。开启后将自动在课程列表中定位指定课程，并按序完成、保存和提交所有未做完的考试 |
 
 ---
 
@@ -133,7 +139,7 @@ python zhihuishu_exam_automation.py
    - **大模型答题**：将匹配的本地上下文、题干与选项发送给大模型。大模型在执行生成时，将触发内置的 `agent_max` 联网网页抓取进行核对，随后流式返回答案。
    - **自动点击/填入**：多选题自动清除重做，填空与简答题识别出空格数量后自动回填。
    - **状态轮询**：检测到题号跳转更新后继续下一题。
-7. 最后一题处理完后，自动点击“保存”，提示用户进行人工最终核对。支持交互式直接继续处理下一科考试。
+7. 最后一题处理完后，普通模式会自动点击“保存”并提示用户人工最终核对；`AUTOMODE=true` 时会在保存后继续尝试自动提交。支持交互式直接继续处理下一科考试。
 
 ---
 
@@ -165,13 +171,13 @@ python zhihuishu_exam_automation.py
 检查 `.env` 中的 API Key 是否正确；登录 [阿里云百炼控制台](https://bailian.console.aliyun.com/) 检查余额。
 
 **Q: 智慧树页面改版导致脚本失效**
-到 [GitHub Issues](https://github.com/LUOLIN926/zhihuishu_exam_automation/issues) 反馈。
+到 [GitHub Issues](https://github.com/linfish330/zhihuishu_exam_automation/issues) 反馈。
 
 **Q: 如何使用其他模型**
 修改 `.env` 中的 `QWEN_ENDPOINT` 和 `QWEN_API_KEY` 为对应服务的地址和密钥即可。
 
 **Q: 程序会自动提交试卷吗？**
-不会。程序只自动保存答案，最终提交需要用户手动确认。
+取决于运行模式。普通模式下不会自动提交，只会自动保存答案并提示用户手动检查；`AUTOMODE=true` 时会在答题保存后尝试自动提交。
 
 ---
 
