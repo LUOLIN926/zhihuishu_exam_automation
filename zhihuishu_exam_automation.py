@@ -23,6 +23,30 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+def get_llm_api_key():
+    return (
+        os.getenv('DEEPSEEK_API_KEY')
+        or os.getenv('LLM_API_KEY')
+        or os.getenv('QWEN_API_KEY')
+    )
+
+def get_llm_endpoint():
+    return (
+        os.getenv('DEEPSEEK_ENDPOINT')
+        or os.getenv('LLM_ENDPOINT')
+        or os.getenv('BASE_URL')
+        or os.getenv('QWEN_ENDPOINT')
+        or os.getenv('DASHSCOPE_BASE_URL')
+        or "https://api.deepseek.com/v1"
+    )
+
+def get_answer_model():
+    return os.getenv('ANSWER_MODEL', os.getenv('MODEL_NAME', 'deepseek-v4-flash-vision-exp'))
+
+def get_ocr_model():
+    return os.getenv('OCR_MODEL', 'deepseek-v4-flash-vision-exp')
+
+
 class ReferenceManager:
     def __init__(self, dir_path=None):
         self.dir_paths = []
@@ -706,17 +730,17 @@ async def ai_answer_question(page, question_num, total_questions, reference_mana
     if logger.level <= logging.DEBUG:
         logger.info(f"发送给大模型的提示词: \n{prompt}")
         
-    api_key = os.getenv('QWEN_API_KEY')
+    api_key = get_llm_api_key()
     if not api_key:
-        logger.error("未找到QWEN_API_KEY环境变量")
+        logger.error("未找到DEEPSEEK_API_KEY（或QWEN_API_KEY）环境变量")
         return
         
-    model_name = os.getenv('ANSWER_MODEL', os.getenv('MODEL_NAME', 'qwen3.6-plus'))
+    model_name = get_answer_model()
     logger.info(f"调用大模型API，模型: {model_name}")
     
     enable_reasoning = os.getenv('ENABLE_REASONING', 'False').lower() == 'true'
     
-    base_endpoint = os.getenv('QWEN_ENDPOINT') or os.getenv('BASE_URL') or os.getenv('DASHSCOPE_BASE_URL') or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    base_endpoint = get_llm_endpoint()
     if "/chat/completions" in base_endpoint:
         url = base_endpoint
     else:
@@ -730,13 +754,16 @@ async def ai_answer_question(page, question_num, total_questions, reference_mana
                 "content": prompt
             }
         ],
-        "stream": True,
-        "extra_body": {
+        "stream": True
+    }
+
+    # 若使用通义千问 / 阿里云百炼服务，适配其专用的联网搜索与思考参数
+    if "dashscope.aliyuncs.com" in url or "qwen" in model_name.lower():
+        payload["extra_body"] = {
             "enable_search": True,
             "search_options": {"search_strategy": "agent_max"},
             "enable_thinking": enable_reasoning
         }
-    }
     
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -1065,15 +1092,15 @@ async def get_subject_description_by_vl_ocr(page):
             with open(screenshot_path, "rb") as image_file:
                 image_data = base64.b64encode(image_file.read()).decode('utf-8')
             
-            api_key = os.getenv('QWEN_API_KEY')
+            api_key = get_llm_api_key()
             if not api_key:
-                logger.error("未找到QWEN_API_KEY环境变量")
+                logger.error("未找到DEEPSEEK_API_KEY（或QWEN_API_KEY）环境变量")
                 return "无题目描述"
             
-            ocr_model_name = os.getenv('OCR_MODEL', 'qwen3.6-plus')
+            ocr_model_name = get_ocr_model()
             logger.info(f"使用OCR模型: {ocr_model_name}")
             
-            base_endpoint = os.getenv('QWEN_ENDPOINT') or os.getenv('BASE_URL') or os.getenv('DASHSCOPE_BASE_URL') or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            base_endpoint = get_llm_endpoint()
             if "/chat/completions" in base_endpoint:
                 url = base_endpoint
             else:
@@ -1324,13 +1351,13 @@ async def zhihuishu_exam_automation():
         username = await async_input("请输入用户名(手机号): ")
         userPassword = await async_input("请输入密码: ")
 
-    api_key = os.getenv("QWEN_API_KEY")
+    api_key = get_llm_api_key()
     if not api_key:
-        print("错误: 未配置QWEN_API_KEY，无法使用大模型答题功能")
-        print("请在.env文件中配置QWEN_API_KEY")
+        print("错误: 未配置DEEPSEEK_API_KEY（或QWEN_API_KEY），无法使用大模型答题功能")
+        print("请在.env文件中配置DEEPSEEK_API_KEY（或兼容配置QWEN_API_KEY）")
         return
 
-    answer_model = os.getenv("ANSWER_MODEL", "qwen3.6-plus")
+    answer_model = get_answer_model()
     print(f"已检测到API密钥，答题模型: {answer_model}，大模型答题功能已启用")
 
     use_ai_answer = True

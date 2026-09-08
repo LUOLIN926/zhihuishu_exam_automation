@@ -4,7 +4,7 @@
 ![Playwright](https://img.shields.io/badge/Playwright-1.40-2EAD33?style=flat-square&logo=playwright&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/License-MIT-F5A623?style=flat-square)
 
-基于 Playwright、通义千问大模型网页抓取与语音转写 API 的智慧树平台学习与答题自动化工具。包含两个独立的脚本：一个负责批量下载课程视频并自动转写为本地 Markdown 知识库，另一个负责在考试时基于该本地知识库进行 RAG（检索增强生成）与模型自带联网网页抓取进行高准确度答题。
+基于 Playwright、DeepSeek/通义千问大模型与语音转写 API 的智慧树平台学习与答题自动化工具。包含两个独立的脚本：一个负责批量下载课程视频并自动转写为本地 Markdown 知识库，另一个负责在考试时基于该本地知识库进行 RAG（检索增强生成）与大模型高准确度答题。
 
 > 新增独立 V2 记忆层设计与实现见：[Agent V2 Memory 架构](readme/memory_architecture.md)。
 
@@ -16,11 +16,11 @@
 - **全自动考试模式（Automode）**：开启后，答题脚本在登录成功后将自动寻找 `COURSE_NAME` 对应的“作业考试”页面，并自动遍历点击进入每一门未完成的考试进行答题、保存与提交，实现全流程闭环答题。
 - **两路互补知识搜索机制**：
   1. **本地 RAG 检索**：自动递归匹配本地课程知识库与课件资料。
-  2. **模型自带网页抓取（Web Extractor）**：大模型端启用 `agent_max` 联网搜索与网页抓取功能，结合思考模式直接实时检索互联网内容，解决复杂或时效性问题。
+  2. **模型联网检索（Web Search / Extractor）**：大模型端支持实时检索，结合思考模式直接实时检索互联网内容，解决复杂或时效性问题（若配置通义千问自动启用百炼 `agent_max` 策略）。
   两路知识无缝融合，提供强大的答题支撑，答题准确率最大化。
 - **本地知识库自动生成**：下载课程视频后，自动将视频音频分离并使用语音识别 (ASR) 转写为 Markdown 格式的文稿。
 - **多题型支持**：支持单选题、多选题、判断题，以及填空题与简答题（自动识别空格数量，AI 结构化返回并自动填入网页）。
-- **免复制 OCR 识别**：使用通义千问视觉大模型对题干进行截图 OCR 识别，完美应对平台防复制、乱码及混淆字体。
+- **免复制 OCR 识别**：使用多模态视觉大模型（默认 `deepseek-v4-flash-vision-exp`）对题干进行截图 OCR 识别，完美应对平台防复制、乱码及混淆字体。
 - **智能人机接管**：登录或答题时若遇到滑块验证码，程序会自动暂停并提示用户手动完成，完成后程序自动继续。
 - **提交行为可区分**：普通模式下，答题结束后只自动保存答案，并提示用户人工检查后自行决定是否提交；`AUTOMODE=true` 时，程序会在最后一题保存后尝试自动提交。
 
@@ -46,7 +46,7 @@ playwright install
 ```bash
 cp .env.example .env
 ```
-用编辑器打开 `.env` 文件，填入您的**智慧树账号密码**、**答题 API 密钥（QWEN_API_KEY）**，以及**转写 API 密钥（MIMO_API_KEY）**。
+用编辑器打开 `.env` 文件，填入您的**智慧树账号密码**、**答题 API 密钥（DEEPSEEK_API_KEY 或 QWEN_API_KEY）**，以及**转写 API 密钥（MIMO_API_KEY）**。
 
 ---
 
@@ -88,10 +88,10 @@ python zhihuishu_exam_automation.py
 | **语音转写** | `MIMO_API_KEY` | 否 | [MiMo 语音转写 API 密钥](https://api.xiaomimimo.com/)，用于转录视频生成知识库 |
 | | `MIMO_BASE_URL` | 否 | 转写 API 地址，默认 `https://api.xiaomimimo.com/v1` |
 | | `MIMO_MODEL` | 否 | 转写模型名称，默认 `mimo-v2.5-asr` |
-| **考试答题** | `QWEN_API_KEY` | 是 | 阿里云百炼/OpenAI 兼容的大模型 API 密钥 |
-| | `QWEN_ENDPOINT` | 否 | 大模型 API 端点，默认通义千问端点 |
-| | `ANSWER_MODEL` | 否 | 答题大模型，推荐使用 `qwen3.7-max` 或 `qwen3.6-plus` |
-| | `OCR_MODEL` | 否 | 题目 OCR 视觉大模型，默认 `qwen3.6-plus` |
+| **考试答题** | `DEEPSEEK_API_KEY` | 是 | DeepSeek / OpenAI 兼容的大模型 API 密钥（向后兼容 `QWEN_API_KEY`） |
+| | `DEEPSEEK_ENDPOINT` | 否 | 大模型 API 端点，默认 `https://api.deepseek.com/v1`（兼容 `QWEN_ENDPOINT`） |
+| | `ANSWER_MODEL` | 否 | 答题大模型，默认 `deepseek-v4-flash-vision-exp` |
+| | `OCR_MODEL` | 否 | 题目 OCR 视觉大模型，默认 `deepseek-v4-flash-vision-exp` |
 | **参考检索** | `REFERENCE_DIR` | 否 | 参考资料/知识库总文件夹路径，默认为 `reference_materials` |
 | | `REFERENCE_MODE` | 否 | 参考资料检索模式：`rag`（基于题干智能检索，推荐）、`full`（全部导入）、`none`（不导入） |
 | | `REFERENCE_TOP_K` | 否 | RAG 检索返回的相关文档数量上限，默认 `3` |
@@ -149,7 +149,7 @@ python zhihuishu_exam_automation.py
 | --- | --- | --- |
 | 语言 | Python | 3.10+ |
 | 浏览器自动化 | Playwright | 1.40.0 |
-| LLM API | 阿里云 DashScope（通义千问） | OpenAI 兼容接口（流式 SSE） |
+| LLM API | DeepSeek / 阿里云 DashScope 等 | OpenAI 兼容接口（流式 SSE） |
 | HTTP 客户端 | httpx | 0.27.0 |
 | 图像处理 | Pillow | 网页截图辅助 |
 | 配置管理 | python-dotenv | 1.0.0 |
@@ -168,13 +168,13 @@ python zhihuishu_exam_automation.py
 运行 `playwright install` 下载浏览器内核。
 
 **Q: API 调用失败**
-检查 `.env` 中的 API Key 是否正确；登录 [阿里云百炼控制台](https://bailian.console.aliyun.com/) 检查余额。
+检查 `.env` 中的 API Key 是否正确；登录对应开放平台控制台（DeepSeek 开放平台或阿里云百炼控制台）检查余额。
 
 **Q: 智慧树页面改版导致脚本失效**
 到 [GitHub Issues](https://github.com/linfish330/zhihuishu_exam_automation/issues) 反馈。
 
 **Q: 如何使用其他模型**
-修改 `.env` 中的 `QWEN_ENDPOINT` 和 `QWEN_API_KEY` 为对应服务的地址和密钥即可。
+修改 `.env` 中的 `DEEPSEEK_ENDPOINT`（或 `QWEN_ENDPOINT`）和对应的 API 密钥，并将 `ANSWER_MODEL` 改为目标模型名称即可。
 
 **Q: 程序会自动提交试卷吗？**
 取决于运行模式。普通模式下不会自动提交，只会自动保存答案并提示用户手动检查；`AUTOMODE=true` 时会在答题保存后尝试自动提交。
